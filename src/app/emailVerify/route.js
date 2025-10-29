@@ -36,7 +36,7 @@ export async function POST(req) {
 
             // Construct email
             const message = {
-                sender: { name: "CommonSource", email: emailSender },
+                sender: { name: "Over18Certifier", email: emailSender },
                 to: [{ email, name: "User" }],
                 subject: "Your verification code",
                 htmlContent: `<html><body><h1>Verification code: ${code}</h1></body></html>`

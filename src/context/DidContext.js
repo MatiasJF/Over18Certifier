@@ -93,14 +93,14 @@ export const DidContextProvider = ({ children, userWallet, userPubKey }) => {
       
       console.log('[DidContext] Found', certificateList.length, 'total certificates');
       
-      // Filter for CommonSource identity certificates that contain DID data (isDID field)
-      const commonSourceType = Utils.toBase64(Utils.toArray('Bdid', 'base64'));
-      const didCerts = certificateList.filter(cert => 
-        cert.type === commonSourceType && 
-        cert.fields && 
+      // Filter for Over18Certifier identity certificates that contain DID data (isDID field)
+      const over18CertifierType = Utils.toBase64(Utils.toArray('Bdid', 'base64'));
+      const didCerts = certificateList.filter(cert =>
+        cert.type === over18CertifierType &&
+        cert.fields &&
         cert.fields.isDID === 'true'
       );
-      console.log('[DidContext] Found', didCerts.length, 'DID certificates (CommonSource identity type with isDID=true)');
+      console.log('[DidContext] Found', didCerts.length, 'DID certificates (Over18Certifier identity type with isDID=true)');
       
       if (didCerts.length > 0) {
         const firstDIDCert = didCerts[0];

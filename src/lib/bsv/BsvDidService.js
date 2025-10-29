@@ -1,8 +1,8 @@
 import { WalletClient, Utils, Hash, PushDrop } from '@bsv/sdk';
 
 /**
- * BSV DID Service for CommonSource
- * 
+ * BSV DID Service for Over18Certifier
+ *
  * This service handles DID creation and resolution using BSV blockchain
  * while maintaining compatibility with the existing certificate system.
  */

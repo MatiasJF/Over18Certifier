@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "CommonSource - Digital Identity Certification",
+  title: "Over18Certifier - Digital Identity Certification",
   description: "Generate BSV-based digital identity certificates with DIDs and VCs",
 };
 

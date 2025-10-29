@@ -17,7 +17,7 @@ async function clearAllData() {
     await client.connect();
     console.log("Connected to MongoDB!");
     
-    const db = client.db("CommonSource");
+    const db = client.db("Over18Certifier");
     const usersCollection = db.collection("users");
     const verifyCollection = db.collection("verify");
     

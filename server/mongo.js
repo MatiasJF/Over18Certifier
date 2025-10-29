@@ -52,7 +52,7 @@ async function connectToMongo() {
       console.log("[Server Mongo] Connected to MongoDB successfully!");
       
       // Initialize database and collections
-      db = client.db("CommonSource");
+      db = client.db("Over18Certifier");
       usersCollection = db.collection("users");
       verifyCollection = db.collection("verify");
       console.log('[Server Mongo] Database and collections initialized');

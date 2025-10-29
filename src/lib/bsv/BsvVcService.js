@@ -1,8 +1,8 @@
 import { Utils } from '@bsv/sdk';
 
 /**
- * BSV Verifiable Credential Service for CommonSource
- * 
+ * BSV Verifiable Credential Service for Over18Certifier
+ *
  * This service creates W3C VC structures that will be used as certificate data
  * in the existing acquireCertificate() flow.
  */
@@ -39,10 +39,10 @@ export class BsvVcService {
       const vcData = {
         '@context': [
           'https://www.w3.org/2018/credentials/v1',
-          'https://commonsource.io/contexts/identity/v1'
+          'https://over18certifier.io/contexts/identity/v1'
         ],
         id: credentialId,
-        type: ['VerifiableCredential', 'CommonSourceIdentityCredential'],
+        type: ['VerifiableCredential', 'Over18CertifierIdentityCredential'],
         issuer: issuerDid,
         issuanceDate: (validFrom || new Date()).toISOString(),
         ...(validUntil && { expirationDate: validUntil.toISOString() }),
