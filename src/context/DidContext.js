@@ -176,57 +176,47 @@ export const DidContextProvider = ({ children, userWallet, userPubKey }) => {
       });
 
       // Field names validation no longer needed - using clean certificateFields with proper keyringForSubject
-      console.log('[DID Cert] ✅ Using clean certificate fields:', Object.keys(certificateFields));
+      console.log('[DID Cert] Using clean certificate fields:', Object.keys(certificateFields));
 
-      // Get subject public key from wallet
-      let subject;
-      try {
-        console.log('[DidContext] Getting public key from wallet');
-        const { publicKey } = await userWallet.getPublicKey({ identityKey: true });
-        subject = publicKey;
-      } catch (error) {
-        console.warn('[DidContext] Failed to get public key from wallet, using userPubKey from context:', error);
-        subject = userPubKey;
-      }
-      
-      if (!subject) {
-        throw new Error('Could not determine subject public key for certificate');
-      }
-      
-      console.log('[DidContext] Using subject public key:', subject);
+      // Use direct protocol: call server to create certificate, then store in wallet
+      console.log('[DidContext] Step 1: Requesting DID certificate from server via direct protocol...');
 
-      // SIMPLIFIED: Use issuance protocol consistently 
-      // This lets the BSV SDK handle the entire certificate acquisition process
-      console.log('[DidContext] Using simplified BSV SDK acquireCertificate with issuance protocol...');
-      
-      const serverPublicKey = process.env.NEXT_PUBLIC_SERVER_PUBLIC_KEY || "024c144093f5a2a5f71ce61dce874d3f1ada840446cebdd283b6a8ccfe9e83d9e4";
       const certifierUrl = process.env.NEXT_PUBLIC_CERTIFIER_URL || "http://localhost:8080";
-      
-      // FIXED: Use main wallet client directly for certificate visibility in MetaNet Desktop
-      // The BSV SDK acquireCertificate() automatically handles certificate storage
-      console.log('[DidContext] Using main wallet client for certificate acquisition to ensure MetaNet Desktop visibility...');
-      
-      // Generate client nonce for server's nonce verification requirement
-      console.log('[DidContext] Generating client nonce for certificate request...');
-      let clientNonce;
-      try {
-        // Create nonce using user wallet for the server public key
-        const { createNonce } = await import('@bsv/sdk');
-        clientNonce = await createNonce(userWallet, serverPublicKey);
-        console.log('[DidContext] Client nonce generated:', clientNonce?.substring(0, 16) + '...');
-      } catch (nonceError) {
-        console.error('[DidContext] Failed to generate client nonce:', nonceError);
-        throw new Error('Failed to generate client nonce for certificate request');
+      const certResponse = await fetch(certifierUrl + '/api/certify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identityKey: userPubKey,
+          fields: certificateFields,
+          type: Utils.toBase64(Utils.toArray('Bdid', 'base64'))
+        })
+      });
+
+      if (!certResponse.ok) {
+        const errorData = await certResponse.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server returned ${certResponse.status}`);
       }
-      
+
+      const certData = await certResponse.json();
+      console.log('[DidContext] Step 1 complete: Got certificate data from server:', {
+        type: certData.type,
+        serialNumber: certData.serialNumber?.substring(0, 16) + '...',
+        hasKeyring: !!certData.keyringForSubject
+      });
+
+      console.log('[DidContext] Step 2: Storing DID certificate in wallet via direct protocol...');
+      const serverPublicKey = process.env.NEXT_PUBLIC_SERVER_PUBLIC_KEY || "024c144093f5a2a5f71ce61dce874d3f1ada840446cebdd283b6a8ccfe9e83d9e4";
+
       const certificateResult = await userWallet.acquireCertificate({
-        type: Utils.toBase64(Utils.toArray('Bdid', 'base64')),  // Fixed: Use consistent string and proper utf8 encoding
-        certifier: serverPublicKey,
-        acquisitionProtocol: "issuance",    
-        fields: certificateFields,  // Your clean certificate fields
-        certifierUrl: certifierUrl, // Required for issuance protocol
-        subject: subject,
-        clientNonce: clientNonce,  // Fixed: Include the generated client nonce
+        type: certData.type,
+        certifier: certData.certifier,
+        acquisitionProtocol: 'direct',
+        fields: certData.fields,
+        serialNumber: certData.serialNumber,
+        revocationOutpoint: certData.revocationOutpoint,
+        signature: certData.signature,
+        keyringRevealer: 'certifier',
+        keyringForSubject: certData.keyringForSubject
       });
       
       console.log('[DidContext] ✅ DID certificate acquired via BSV SDK issuance protocol:', {

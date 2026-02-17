@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { sendEmailFunc, verifyCode } from "../hooks/emailVerification";
-import { Utils, createNonce } from "@bsv/sdk";
+import { Utils } from "@bsv/sdk";
 import { useDidContext } from "../context/DidContext";
 import { 
   countries, 
@@ -621,51 +621,42 @@ export default function Home() {
       
       const serverPublicKey = process.env.NEXT_PUBLIC_SERVER_PUBLIC_KEY || "024c144093f5a2a5f71ce61dce874d3f1ada840446cebdd283b6a8ccfe9e83d9e4";
       
-      // SIMPLIFIED: Use issuance protocol consistently (matching working DID certificate pattern)
-      // This lets the BSV SDK handle the entire certificate acquisition process
-      console.log('[VC Cert] Using simplified BSV SDK acquireCertificate with issuance protocol...');
-      
-      // Get subject public key from wallet
-      let subject;
-      try {
-        console.log('[VC Cert] Getting public key from wallet');
-        const { publicKey } = await userWallet.getPublicKey({ identityKey: true });
-        subject = publicKey;
-      } catch (error) {
-        console.warn('[VC Cert] Failed to get public key from wallet, using userPubKey from context:', error);
-        subject = userPubKey;
-      }
-      
-      if (!subject) {
-        throw new Error('Could not determine subject public key for certificate');
-      }
-      
-      console.log('[VC Cert] Using subject public key:', subject);
+      // Use direct protocol: call server to create certificate, then store in wallet
+      console.log('[VC Cert] Step 1: Requesting certificate from server via direct protocol...');
 
-      // FIXED: Use main wallet client directly for certificate visibility in MetaNet Desktop
-      // The BSV SDK acquireCertificate() automatically handles certificate storage
-      console.log('[VC Cert] Using main wallet client for certificate acquisition to ensure MetaNet Desktop visibility...');
-      
-      // Generate client nonce for server's nonce verification requirement
-      console.log('[VC Cert] Generating client nonce for certificate request...');
-      let clientNonce;
-      try {
-        // Create nonce using user wallet for the server public key
-        clientNonce = await createNonce(userWallet, serverPublicKey);
-        console.log('[VC Cert] Client nonce generated:', clientNonce?.substring(0, 16) + '...');
-      } catch (nonceError) {
-        console.error('[VC Cert] Failed to generate client nonce:', nonceError);
-        throw new Error('Failed to generate client nonce for certificate request');
+      const certResponse = await fetch(certifierUrl + '/api/certify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identityKey: userPubKey,
+          fields: certificateFields,
+          type: Utils.toBase64(Utils.toArray('Bvc', 'base64'))
+        })
+      });
+
+      if (!certResponse.ok) {
+        const errorData = await certResponse.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server returned ${certResponse.status}`);
       }
-      
+
+      const certData = await certResponse.json();
+      console.log('[VC Cert] Step 1 complete: Got certificate data from server:', {
+        type: certData.type,
+        serialNumber: certData.serialNumber?.substring(0, 16) + '...',
+        hasKeyring: !!certData.keyringForSubject
+      });
+
+      console.log('[VC Cert] Step 2: Storing certificate in wallet via direct protocol...');
       const certificateResult = await userWallet.acquireCertificate({
-        type: Utils.toBase64(Utils.toArray('Bvc', 'base64')),
-        certifier: serverPublicKey,
-        acquisitionProtocol: "issuance",    
-        fields: certificateFields,  // Your clean certificate fields
-        certifierUrl: certifierUrl, // Required for issuance protocol
-        subject: subject,           // CRITICAL: Include subject public key (was missing)
-        clientNonce: clientNonce,   // CRITICAL: Include generated client nonce (was missing)
+        type: certData.type,
+        certifier: certData.certifier,
+        acquisitionProtocol: 'direct',
+        fields: certData.fields,
+        serialNumber: certData.serialNumber,
+        revocationOutpoint: certData.revocationOutpoint,
+        signature: certData.signature,
+        keyringRevealer: 'certifier',
+        keyringForSubject: certData.keyringForSubject
       });
       
       console.log('[VC Cert] ✅ VC certificate acquired via BSV SDK issuance protocol:', {
@@ -754,15 +745,13 @@ export default function Home() {
       }
       
       // Certificate acquired successfully
-      const certResponse = certificateResult;
-      
-      
-      
+      const acquiredCert = certificateResult;
+
       // Trigger authentication check to detect the new certificate
       console.log('Triggering authentication check to detect new certificate...');
-      
+
       // Set the real certificate in wallet context to trigger state update
-      setCertificate(certResponse);
+      setCertificate(acquiredCert);
       
       // Also trigger certificate detection to update state
       try {

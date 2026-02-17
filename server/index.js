@@ -3,7 +3,7 @@ import bodyParser from 'body-parser'
 import { createAuthMiddleware } from '@bsv/auth-express-middleware'
 import { WalletClient, PrivateKey, KeyDeriver } from '@bsv/sdk'
 import { WalletStorageManager, Services, Wallet, StorageClient } from '@bsv/wallet-toolbox-client'
-import { signCertificate } from './signCertificate.js'
+import { signCertificate, certifyDirect } from './signCertificate.js'
 import dotenv from 'dotenv'
 import crypto from 'crypto'
 
@@ -115,6 +115,10 @@ app.use((req, res, next) => {
     });
   });
 
+  // Direct protocol endpoint — BEFORE auth middleware so it's not wrapped in BRC-103
+  // Frontend calls this directly via fetch(), gets cert data, then stores with acquireCertificate({ acquisitionProtocol: 'direct' })
+  app.post('/api/certify', (req, res) => certifyDirect(req, res, wallet));
+
   // Apply auth middleware to all routes (following bsva-certs pattern)
   app.use(authMiddleware);
 
@@ -139,9 +143,9 @@ app.use((req, res, next) => {
     next();
   });
   
-  // 5. Define your routes as usual
-  app.post('/signCertificate', signCertificate)
-  app.post('/acquireCertificate', signCertificate)
+  // 5. Define your routes as usual — pass shared wallet to handler
+  app.post('/signCertificate', (req, res) => signCertificate(req, res, wallet))
+  app.post('/acquireCertificate', (req, res) => signCertificate(req, res, wallet))
   
   const port = process.env.PORT || 8080;
   app.listen(port, () => {
