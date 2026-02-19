@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react'
 import { toast } from 'react-hot-toast'
+import config from '@/certifier.config'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,13 +10,17 @@ import { Label } from '@/components/ui/label'
 
 interface Props {
   onVerified: (email: string) => void
+  onSkip?: () => void
   initialEmail?: string
+  label?: string
 }
 
-export default function EmailVerification({ onVerified, initialEmail = '' }: Props) {
+export default function EmailVerification({ onVerified, onSkip, initialEmail = '', label }: Props) {
   const [email, setEmail] = useState(initialEmail)
   const [code, setCode] = useState('')
   const [codeSent, setCodeSent] = useState(false)
+
+  const appName = config.branding.appName
 
   const handleSendCode = async () => {
     if (!email.trim()) {
@@ -74,8 +79,12 @@ export default function EmailVerification({ onVerified, initialEmail = '' }: Pro
         </CardHeader>
       ) : (
         <CardHeader>
-          <CardTitle className="text-center">Certify your identity using your email address</CardTitle>
-          <p className="text-muted-foreground text-center">We&apos;ll send you an email to verify</p>
+          <CardTitle className="text-center">
+            {label || `Certify your identity using your email address`}
+          </CardTitle>
+          <p className="text-muted-foreground text-center">
+            {appName} will send you an email to verify
+          </p>
         </CardHeader>
       )}
       <CardContent className="space-y-4">
@@ -115,6 +124,11 @@ export default function EmailVerification({ onVerified, initialEmail = '' }: Pro
             <Button onClick={handleSendCode} className="w-full">
               Send Verification Code
             </Button>
+            {onSkip && (
+              <Button onClick={onSkip} variant="ghost" className="w-full">
+                Skip this step
+              </Button>
+            )}
           </>
         )}
       </CardContent>

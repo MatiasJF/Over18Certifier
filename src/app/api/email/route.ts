@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { TransactionalEmailsApi, TransactionalEmailsApiApiKeys } from '@getbrevo/brevo'
+import config from '@/certifier.config'
 
 // In-memory verification code store with TTL
 const codes = new Map<string, { code: number; expires: number }>()
@@ -20,6 +21,8 @@ if (brevoAPIKey) {
 }
 const emailSender = process.env.SENDER_EMAIL?.trim() || 'noreply@example.com'
 
+const appName = config.branding.appName
+
 export async function POST(req: Request) {
   try {
     const { email, code, type } = await req.json()
@@ -30,9 +33,9 @@ export async function POST(req: Request) {
 
       // Send via Brevo
       const message = {
-        sender: { name: 'Over18Certifier', email: emailSender },
+        sender: { name: appName, email: emailSender },
         to: [{ email, name: 'User' }],
-        subject: 'Your verification code',
+        subject: `Your ${appName} verification code`,
         htmlContent: `<html><body><h1>Verification code: ${code}</h1></body></html>`,
       }
 

@@ -45,6 +45,9 @@ package-lock.json
 *.tsbuildinfo
 next-env.d.ts
 
+# Revocation secrets (server-side only, contains preimages)
+.revocation-secrets.json
+
 # AI generated files
 .claude/
 CLAUDE.md

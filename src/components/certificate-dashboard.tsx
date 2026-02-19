@@ -1,9 +1,10 @@
 'use client'
 
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { toast } from 'react-hot-toast'
 import { useWallet } from '@/components/wallet-provider'
-import { CERT_TYPE_BVC } from '@/lib/types'
+import config from '@/certifier.config'
+import type { CertificateTypeConfig } from '@/lib/config-types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { CheckCircle, LogOut, Trash2, ArrowLeft, RefreshCw } from 'lucide-react'
@@ -11,41 +12,62 @@ import { CheckCircle, LogOut, Trash2, ArrowLeft, RefreshCw } from 'lucide-react'
 const SERVER_PUB_KEY = process.env.NEXT_PUBLIC_SERVER_PUBLIC_KEY || ''
 
 export default function CertificateDashboard() {
-  const { wallet, bvcCertificate, checkCertificates, logout } = useWallet()
+  const { wallet, activeCertificate, activeCertType, checkCertificates, logout } = useWallet()
+  const [revoking, setRevoking] = useState(false)
 
-  // Check for return URL and auto-redirect
+  // Find the matching cert config
+  const certConfig: CertificateTypeConfig | undefined = config.certificates.find(
+    c => c.certificateTypeBase64 === activeCertType
+  )
+  const dashboard = certConfig?.dashboard
+
+  // Extract the revocation UTXO txid
+  const revocationOutpoint = activeCertificate?.revocationOutpoint || ''
+  const revocationUtxoTxid = revocationOutpoint.split('.')[0]
+  const isDummyOutpoint = revocationUtxoTxid === '00'.repeat(32)
+
+  // Return URL handling
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const returnUrl = params.get('returnUrl')
-    if (returnUrl) {
+    if (returnUrl && (dashboard?.returnUrlAutoRedirect !== false)) {
       setTimeout(() => {
-        toast.success('Redirecting back to whiskey store...')
+        toast.success('Redirecting...')
         window.location.href = decodeURIComponent(returnUrl)
       }, 2000)
     }
-  }, [])
+  }, [dashboard])
 
   const handleRevoke = async () => {
-    if (!wallet || !bvcCertificate) return
+    if (!wallet || !activeCertificate || !activeCertType) return
+    setRevoking(true)
     try {
+      const res = await fetch('/api/revoke', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ certificate: activeCertificate }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || `Server returned ${res.status}`)
+
       await wallet.relinquishCertificate({
-        type: CERT_TYPE_BVC,
-        serialNumber: bvcCertificate.serialNumber,
+        type: activeCertType,
+        serialNumber: activeCertificate.serialNumber,
         certifier: SERVER_PUB_KEY,
       })
 
-      // Notify server
-      await fetch('/api/revoke', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ certificate: bvcCertificate }),
-      })
-
-      toast.success('Certificate revoked')
+      if (data.txid) {
+        toast.success(`Certificate revoked on-chain! TX: ${data.txid.substring(0, 12)}...`, { duration: 5000 })
+      } else {
+        toast.success('Certificate revoked')
+      }
       logout()
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error'
       toast.error('Revocation failed: ' + msg)
+    } finally {
+      setRevoking(false)
     }
   }
 
@@ -54,7 +76,7 @@ export default function CertificateDashboard() {
     toast.success('Certificate refreshed')
   }
 
-  const handleReturnToStore = () => {
+  const handleReturn = () => {
     const params = new URLSearchParams(window.location.search)
     const returnUrl = params.get('returnUrl')
     if (returnUrl) window.location.href = decodeURIComponent(returnUrl)
@@ -70,26 +92,35 @@ export default function CertificateDashboard() {
           <div className="flex justify-center mb-4">
             <CheckCircle className="h-16 w-16 text-green-500" />
           </div>
-          <CardTitle>Welcome Back!</CardTitle>
-          <p className="text-muted-foreground">You are successfully logged in with your certificate.</p>
+          <CardTitle>{dashboard?.successTitle || 'Welcome Back!'}</CardTitle>
+          <p className="text-muted-foreground">
+            {dashboard?.successDescription || 'You are successfully logged in with your certificate.'}
+          </p>
           {returnUrl && (
-            <p className="text-sm text-blue-600 mt-2">Auto-redirecting to the whiskey store...</p>
+            <p className="text-sm text-blue-600 mt-2">Auto-redirecting...</p>
           )}
         </CardHeader>
         <CardContent className="space-y-3">
+          {revocationUtxoTxid && !isDummyOutpoint && (
+            <div className="p-3 bg-muted rounded-lg text-xs font-mono break-all">
+              <p className="text-muted-foreground mb-1 font-sans text-sm font-medium">Revocation UTXO</p>
+              <p>{revocationUtxoTxid}</p>
+            </div>
+          )}
+
           {returnUrl && (
-            <Button onClick={handleReturnToStore} className="w-full gap-2">
+            <Button onClick={handleReturn} className="w-full gap-2">
               <ArrowLeft className="h-4 w-4" />
-              Return to Whiskey Store
+              {dashboard?.returnUrlLabel || 'Return'}
             </Button>
           )}
           <Button onClick={handleRefresh} variant="outline" className="w-full gap-2">
             <RefreshCw className="h-4 w-4" />
             Refresh Certificate
           </Button>
-          <Button onClick={handleRevoke} variant="destructive" className="w-full gap-2">
+          <Button onClick={handleRevoke} variant="destructive" className="w-full gap-2" disabled={revoking}>
             <Trash2 className="h-4 w-4" />
-            Revoke Certificate
+            {revoking ? 'Revoking...' : 'Revoke Certificate'}
           </Button>
           <Button onClick={logout} variant="outline" className="w-full gap-2">
             <LogOut className="h-4 w-4" />

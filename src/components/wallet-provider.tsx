@@ -3,17 +3,21 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 import { WalletClient, Utils } from '@bsv/sdk'
 import { toast } from 'react-hot-toast'
-import { CERT_TYPE_BDID, CERT_TYPE_BVC, type CertStep, type WalletCertificate } from '@/lib/types'
+import config from '@/certifier.config'
+import type { AppStep, WalletCertificate } from '@/lib/types'
 
 interface WalletState {
   wallet: InstanceType<typeof WalletClient> | null
   identityKey: string | null
   isConnected: boolean
-  hasBdid: boolean
-  hasBvc: boolean
-  bvcCertificate: WalletCertificate | null
-  step: CertStep
-  setStep: (step: CertStep) => void
+  hasDid: boolean
+  /** Certificates keyed by certificate type base64 */
+  certificates: Record<string, WalletCertificate | null>
+  activeCertificate: WalletCertificate | null
+  activeCertType: string | null
+  setActiveCertType: (id: string | null) => void
+  step: AppStep
+  setStep: (step: AppStep) => void
   connectWallet: () => Promise<void>
   checkCertificates: () => Promise<void>
   logout: () => void
@@ -29,23 +33,42 @@ export function useWallet() {
 
 const SERVER_PUB_KEY = process.env.NEXT_PUBLIC_SERVER_PUBLIC_KEY || ''
 
+/** DID certificate type — matches what the old code used */
+const DID_CERT_TYPE = Utils.toBase64(Utils.toArray('Bdid', 'base64'))
+
+function getInitialStep(): AppStep {
+  const hasVerification = (config.verificationSteps ?? []).length > 0
+  if (hasVerification) return 'verification'
+  if (config.certificates.length > 1) return 'select'
+  return 'form'
+}
+
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [wallet, setWallet] = useState<InstanceType<typeof WalletClient> | null>(null)
   const [identityKey, setIdentityKey] = useState<string | null>(null)
-  const [hasBdid, setHasBdid] = useState(false)
-  const [hasBvc, setHasBvc] = useState(false)
-  const [bvcCertificate, setBvcCertificate] = useState<WalletCertificate | null>(null)
-  const [step, setStep] = useState<CertStep>('email')
+  const [hasDid, setHasDid] = useState(false)
+  const [certificates, setCertificates] = useState<Record<string, WalletCertificate | null>>({})
+  const [activeCertType, setActiveCertType] = useState<string | null>(null)
+  const [step, setStep] = useState<AppStep>(getInitialStep())
   const hasChecked = useRef(false)
 
   const isConnected = !!wallet && !!identityKey
 
+  // Derive activeCertificate from activeCertType
+  const activeCertificate = activeCertType ? certificates[activeCertType] ?? null : null
+
   const checkCertificates = useCallback(async () => {
     if (!wallet || !SERVER_PUB_KEY) return
     try {
+      // Collect all cert types to query (configured certs + DID if enabled)
+      const typesToQuery: string[] = config.certificates.map(c => c.certificateTypeBase64)
+      if (config.did?.enabled) {
+        typesToQuery.push(DID_CERT_TYPE)
+      }
+
       const result = await wallet.listCertificates({
         certifiers: [SERVER_PUB_KEY],
-        types: [CERT_TYPE_BDID, CERT_TYPE_BVC],
+        types: typesToQuery,
       })
 
       let certs: WalletCertificate[] = []
@@ -55,17 +78,33 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         certs = (result as { certificates: WalletCertificate[] }).certificates || []
       }
 
-      const bdidCerts = certs.filter(c => c.type === CERT_TYPE_BDID)
-      const bvcCerts = certs.filter(c => c.type === CERT_TYPE_BVC)
+      // Check DID
+      const didCerts = certs.filter(c => c.type === DID_CERT_TYPE)
+      setHasDid(didCerts.length > 0)
 
-      setHasBdid(bdidCerts.length > 0)
-      setHasBvc(bvcCerts.length > 0)
+      // Build certificates map
+      const certMap: Record<string, WalletCertificate | null> = {}
+      for (const certConfig of config.certificates) {
+        const matching = certs.filter(c => c.type === certConfig.certificateTypeBase64)
+        certMap[certConfig.certificateTypeBase64] = matching.length > 0 ? matching[0] : null
+      }
+      setCertificates(certMap)
 
-      if (bvcCerts.length > 0) {
-        setBvcCertificate(bvcCerts[0])
+      // Determine step based on found certificates
+      // If any configured cert exists, go to dashboard
+      const existingCert = config.certificates.find(
+        cc => certMap[cc.certificateTypeBase64] !== null
+      )
+      if (existingCert) {
+        setActiveCertType(existingCert.certificateTypeBase64)
         setStep('dashboard')
-      } else if (bdidCerts.length > 0) {
-        setStep('form')
+      } else if (didCerts.length > 0 || !config.did?.enabled) {
+        // Has DID or DID not needed — go to form (or select if multiple)
+        if (config.certificates.length > 1) {
+          setStep('select')
+        } else {
+          setStep('form')
+        }
       }
     } catch (err) {
       console.warn('[WalletProvider] Failed to list certificates:', err)
@@ -86,9 +125,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const logout = useCallback(() => {
-    setBvcCertificate(null)
-    setHasBvc(false)
-    setStep('email')
+    setActiveCertType(null)
+    setCertificates({})
+    setStep(getInitialStep())
     toast.success('Logged out')
   }, [])
 
@@ -111,9 +150,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         wallet,
         identityKey,
         isConnected,
-        hasBdid,
-        hasBvc,
-        bvcCertificate,
+        hasDid,
+        certificates,
+        activeCertificate,
+        activeCertType,
+        setActiveCertType,
         step,
         setStep,
         connectWallet,

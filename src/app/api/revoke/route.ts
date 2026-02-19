@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { revokeCertificate } from '@/lib/certifier'
 
 export async function POST(req: Request) {
   try {
@@ -8,11 +9,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid certificate' }, { status: 400 })
     }
 
-    // Certificate revocation is handled client-side via wallet.relinquishCertificate()
-    // This endpoint is a placeholder for server-side revocation tracking if needed later
-    console.log('[/api/revoke] Certificate revoked:', certificate.serialNumber.substring(0, 16))
+    const result = await revokeCertificate(certificate.serialNumber)
+    console.log('[/api/revoke] Certificate revoked on-chain:', certificate.serialNumber.substring(0, 16), 'txid:', result.txid)
 
-    return NextResponse.json({ message: 'Certificate revocation acknowledged' })
+    return NextResponse.json({ message: 'Certificate revoked on-chain', txid: result.txid })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     console.error('[/api/revoke] Error:', message)

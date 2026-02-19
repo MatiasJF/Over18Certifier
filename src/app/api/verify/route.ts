@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { Certificate } from '@bsv/sdk'
-import { getCertifierPubKey } from '@/lib/certifier'
+import { getCertifierPubKey, checkRevocationStatus } from '@/lib/certifier'
 
 export async function POST(req: Request) {
   try {
@@ -43,8 +43,12 @@ export async function POST(req: Request) {
 
     const isValid = await cert.verify()
 
+    // Check on-chain revocation status
+    const isRevoked = checkRevocationStatus(certificate.revocationOutpoint)
+
     return NextResponse.json({
-      valid: isValid,
+      valid: isValid && !isRevoked,
+      revoked: isRevoked,
       certifier: ourPubKey,
       subject: certificate.subject,
       type: certificate.type,
